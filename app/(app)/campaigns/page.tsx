@@ -1,0 +1,59 @@
+export const dynamic = 'force-dynamic'
+
+import { createServerSupabaseClient } from '@/lib/supabase-server'
+import { CampaignsClient } from '@/components/campaigns/CampaignsClient'
+
+export default async function CampaignsPage() {
+  const supabase = await createServerSupabaseClient()
+  const { data: { user } } = await supabase.auth.getUser()
+
+  const { data: profile } = await supabase
+    .from('users')
+    .select('role')
+    .eq('id', user!.id)
+    .single()
+
+  const isAdmin = profile?.role === 'owner' || profile?.role === 'vp_operations'
+
+  const { data: campaigns } = await supabase
+    .from('campaigns')
+    .select('*, steps:campaign_steps(*)')
+    .order('name')
+
+  const enrollmentsQuery = supabase
+    .from('campaign_enrollments')
+    .select('*, lead:leads(id, business_name, owner_name, email, assigned_rep_id), campaign:campaigns(name)')
+    .eq('status', 'active')
+    .order('enrolled_at', { ascending: false })
+    .limit(50)
+
+  const { data: enrollments } = await enrollmentsQuery
+
+  const { data: emailStats } = await supabase
+    .from('email_logs')
+    .select('sent_at, opened_at, clicked_at, replied_at')
+    .limit(1000)
+
+  const totalSent = emailStats?.length || 0
+  const totalOpened = emailStats?.filter(e => e.opened_at).length || 0
+  const totalClicked = emailStats?.filter(e => e.clicked_at).length || 0
+  const totalReplied = emailStats?.filter(e => e.replied_at).length || 0
+
+  const leadsQuery = supabase
+    .from('leads')
+    .select('id, business_name, owner_name, email, assigned_rep_id')
+    .order('business_name')
+  if (!isAdmin) leadsQuery.eq('assigned_rep_id', user!.id)
+  const { data: leads } = await leadsQuery
+
+  return (
+    <CampaignsClient
+      campaigns={campaigns || []}
+      enrollments={enrollments || []}
+      leads={leads || []}
+      stats={{ totalSent, totalOpened, totalClicked, totalReplied }}
+      currentUserId={user!.id}
+      isAdmin={isAdmin}
+    />
+  )
+}
