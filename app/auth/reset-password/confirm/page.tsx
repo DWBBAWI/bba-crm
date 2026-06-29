@@ -1,8 +1,6 @@
 'use client'
 
-export const dynamic = 'force-dynamic'
-
-import { useState, useEffect, useCallback } from 'react'
+import { Suspense, useState, useEffect, useCallback } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { motion } from 'framer-motion'
@@ -19,13 +17,46 @@ function validate(password: string, confirm: string): string {
   return ''
 }
 
-export default function ConfirmResetPage() {
+// Shell used both as the Suspense fallback and the loading state inside the inner component
+function PageShell({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen flex items-center justify-center p-4" style={{ background: '#080b12' }}>
+      <AmbientBackground />
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] as [number, number, number, number] }}
+        className="relative w-full max-w-md"
+      >
+        <div className="glass-strong rounded-2xl p-8 shadow-2xl">
+          <div className="flex flex-col items-center mb-8">
+            <motion.div
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.1, duration: 0.4 }}
+              className="w-14 h-14 rounded-2xl flex items-center justify-center mb-4 shadow-lg"
+              style={{ background: 'linear-gradient(135deg, #7c3aed, #4f46e5)' }}
+            >
+              <Zap size={26} className="text-white" />
+            </motion.div>
+            {children}
+          </div>
+        </div>
+        <p className="text-center text-xs mt-6" style={{ color: 'var(--text-muted)' }}>
+          Breakthrough Business Advisors © {new Date().getFullYear()}
+        </p>
+      </motion.div>
+    </div>
+  )
+}
+
+// Inner component — the only place useSearchParams() is called
+function ConfirmResetInner() {
   const router = useRouter()
   const searchParams = useSearchParams()
 
   const [pageState, setPageState] = useState<PageState>('loading')
   const [linkError, setLinkError] = useState('')
-
   const [password, setPassword] = useState('')
   const [confirm, setConfirm] = useState('')
   const [showPw, setShowPw] = useState(false)
@@ -55,9 +86,7 @@ export default function ConfirmResetPage() {
     }
   }, [searchParams])
 
-  useEffect(() => {
-    exchangeCode()
-  }, [exchangeCode])
+  useEffect(() => { exchangeCode() }, [exchangeCode])
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -84,7 +113,7 @@ export default function ConfirmResetPage() {
       <motion.div
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] }}
+        transition={{ duration: 0.5, ease: [0.23, 1, 0.32, 1] as [number, number, number, number] }}
         className="relative w-full max-w-md"
       >
         <div className="glass-strong rounded-2xl p-8 shadow-2xl">
@@ -220,7 +249,6 @@ export default function ConfirmResetPage() {
                 </div>
               </div>
 
-              {/* Strength hint */}
               {password.length > 0 && password.length < 8 && (
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   {8 - password.length} more character{8 - password.length !== 1 ? 's' : ''} needed
@@ -256,5 +284,27 @@ export default function ConfirmResetPage() {
         </p>
       </motion.div>
     </div>
+  )
+}
+
+// Default export wraps in Suspense — required by Next.js when useSearchParams()
+// is used in a client component (even with force-dynamic, Next.js 15 enforces this)
+export default function ConfirmResetPage() {
+  return (
+    <Suspense
+      fallback={
+        <PageShell>
+          <h1 className="text-xl font-bold text-white">Set new password</h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--text-secondary)' }}>
+            Verifying reset link…
+          </p>
+          <div className="mt-6">
+            <Loader2 size={24} className="text-purple-400 animate-spin" />
+          </div>
+        </PageShell>
+      }
+    >
+      <ConfirmResetInner />
+    </Suspense>
   )
 }
