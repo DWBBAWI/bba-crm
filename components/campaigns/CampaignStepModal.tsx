@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { Trash2, ImageIcon, Upload, X, Lock, Unlock, Move } from 'lucide-react'
+import { Trash2, ImageIcon, Upload, X, Lock, Unlock, Move, TextAlignStart, TextAlignCenter, TextAlignEnd } from 'lucide-react'
 import { Modal } from '@/components/ui/Modal'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
@@ -119,6 +119,8 @@ interface Step {
   header_image_width?: number | null
 }
 
+type ImgAlign = 'left' | 'center' | 'right'
+
 interface PendingBodyImg {
   url: string
   naturalW: number
@@ -126,6 +128,102 @@ interface PendingBodyImg {
   displayW: number
   displayH: number
   lockRatio: boolean
+  align: ImgAlign
+  // Present when re-editing an image already in the body — replace this range instead of inserting
+  editRange?: { start: number; end: number }
+}
+
+// ── Body image parsing & live preview ───────────────────────────────────────────
+// The body is stored as plain text with raw <img> tags embedded as lines. To give
+// a WYSIWYG feel, we parse those tags back out and render real <img> elements
+// (a native <textarea> can't render images itself).
+
+interface ParsedBodyImg {
+  start: number
+  end: number
+  src: string
+  width: number
+  height: number | null // null = aspect-ratio locked (tag has height:auto)
+  align: ImgAlign
+}
+
+function parseBodyImages(body: string): ParsedBodyImg[] {
+  const out: ParsedBodyImg[] = []
+  const re = /<img\b[^>]*>/gi
+  let m: RegExpExecArray | null
+  while ((m = re.exec(body))) {
+    const raw = m[0]
+    const src = raw.match(/src="([^"]*)"/)?.[1]
+    if (!src) continue
+    const style  = raw.match(/style="([^"]*)"/)?.[1] ?? ''
+    const widthM  = style.match(/width:\s*(\d+)px/)
+    const heightM = style.match(/height:\s*(auto|\d+)(?:px)?/)
+    const alignM  = raw.match(/data-align="(left|center|right)"/)
+    out.push({
+      start:  m.index,
+      end:    m.index + raw.length,
+      src,
+      width:  widthM ? Number(widthM[1]) : BODY_MAX_W,
+      height: heightM && heightM[1] !== 'auto' ? Number(heightM[1]) : null,
+      align:  (alignM?.[1] as ImgAlign) ?? 'center',
+    })
+  }
+  return out
+}
+
+interface BodyPreviewProps {
+  body: string
+  onEditImage: (img: ParsedBodyImg) => void
+}
+
+function BodyPreview({ body, onEditImage }: BodyPreviewProps) {
+  const images = parseBodyImages(body)
+
+  if (!body.trim()) {
+    return <p className="text-sm italic" style={{ color: 'var(--text-muted)' }}>Nothing to preview yet…</p>
+  }
+
+  const nodes: React.ReactNode[] = []
+  let cursor = 0
+  images.forEach((img, i) => {
+    const textBefore = body.slice(cursor, img.start).trim()
+    if (textBefore) {
+      nodes.push(
+        <p key={`t${i}`} className="whitespace-pre-wrap text-sm leading-relaxed mb-2" style={{ color: '#374151' }}>
+          {textBefore}
+        </p>
+      )
+    }
+    nodes.push(
+      <div
+        key={`i${i}`}
+        className="mb-2"
+        style={{ display: 'flex', justifyContent: img.align === 'left' ? 'flex-start' : img.align === 'right' ? 'flex-end' : 'center' }}
+      >
+        <button type="button" onClick={() => onEditImage(img)} className="relative group" title="Click to edit size, alignment">
+          <img
+            src={img.src}
+            alt=""
+            style={{ width: img.width, height: img.height ?? 'auto', maxWidth: '100%', display: 'block', borderRadius: 4 }}
+          />
+          <span className="absolute inset-0 rounded bg-black/0 group-hover:bg-black/35 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+            <span className="text-[10px] text-white font-medium px-2 py-1 rounded bg-black/60">Click to edit</span>
+          </span>
+        </button>
+      </div>
+    )
+    cursor = img.end
+  })
+  const textAfter = body.slice(cursor).trim()
+  if (textAfter) {
+    nodes.push(
+      <p key="t-last" className="whitespace-pre-wrap text-sm leading-relaxed" style={{ color: '#374151' }}>
+        {textAfter}
+      </p>
+    )
+  }
+
+  return <>{nodes}</>
 }
 
 interface CampaignStepModalProps {
@@ -280,7 +378,7 @@ export function CampaignStepModal({
       const naturalH = img.naturalHeight || 300
       const displayW = Math.min(naturalW, BODY_MAX_W)
       const displayH = Math.round(displayW / naturalW * naturalH)
-      setPendingBodyImg({ url, naturalW, naturalH, displayW, displayH, lockRatio: true })
+      setPendingBodyImg({ url, naturalW, naturalH, displayW, displayH, lockRatio: true, align: 'center' })
     } catch {
       setError('Body image upload failed — check the email-images bucket exists.')
     } finally {
@@ -290,9 +388,20 @@ export function CampaignStepModal({
 
   const insertPendingBodyImg = () => {
     if (!pendingBodyImg) return
-    const { url, displayW, displayH, lockRatio } = pendingBodyImg
+    const { url, displayW, displayH, lockRatio, align, editRange } = pendingBodyImg
     const heightStyle = lockRatio ? 'height:auto' : `height:${displayH}px`
-    const tag = `<img src="${url}" alt="" style="width:${displayW}px;${heightStyle};max-width:100%;display:block;margin:12px 0;">`
+    const margin =
+      align === 'left'  ? '12px auto 12px 0' :
+      align === 'right' ? '12px 0 12px auto' :
+                           '12px auto'
+    const tag = `<img src="${url}" alt="" data-align="${align}" style="width:${displayW}px;${heightStyle};max-width:100%;display:block;margin:${margin};text-align:${align};">`
+
+    if (editRange) {
+      setForm(f => ({ ...f, body: f.body.slice(0, editRange.start) + tag + f.body.slice(editRange.end) }))
+      setPendingBodyImg(null)
+      return
+    }
+
     const { start, end } = bodySelectionRef.current
     setForm(f => {
       const body = f.body
@@ -305,6 +414,25 @@ export function CampaignStepModal({
       bodyRef.current?.setSelectionRange(newPos, newPos)
       bodyRef.current?.focus()
     })
+  }
+
+  // Re-open an already-inserted body image for editing (size, alignment)
+  const editBodyImage = (img: ParsedBodyImg) => {
+    setError('')
+    const el = new window.Image()
+    el.onload = () => {
+      const naturalW = el.naturalWidth  || img.width
+      const naturalH = el.naturalHeight || img.height || Math.round(img.width * 0.6)
+      const lockRatio = img.height == null
+      const displayW = img.width
+      const displayH = img.height ?? Math.round(displayW / naturalW * naturalH)
+      setPendingBodyImg({
+        url: img.src, naturalW, naturalH, displayW, displayH, lockRatio, align: img.align,
+        editRange: { start: img.start, end: img.end },
+      })
+    }
+    el.onerror = () => setError('Could not load image for editing.')
+    el.src = img.src
   }
 
   // Pending body image resize helpers
@@ -325,6 +453,9 @@ export function CampaignStepModal({
       const displayH  = lockRatio ? Math.round(p.displayW / p.naturalW * p.naturalH) : p.displayH
       return { ...p, lockRatio, displayH }
     })
+  }
+  const setPendingAlign = (align: ImgAlign) => {
+    setPendingBodyImg(p => p ? { ...p, align } : p)
   }
 
   // ── Save / Delete ────────────────────────────────────────────────────────────
@@ -450,31 +581,33 @@ export function CampaignStepModal({
 
               {form.header_image_url ? (
                 <div className="space-y-2">
-                  {/* Preview */}
-                  <div className="relative group rounded-xl overflow-hidden border border-white/[0.08] bg-white/[0.02]"
-                    style={{ maxHeight: 160, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <img
-                      src={form.header_image_url}
-                      alt="Email header"
-                      style={{ width: '100%', maxHeight: 160, objectFit: 'cover' }}
-                    />
-                    {/* Hover overlay */}
-                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 pointer-events-none group-hover:pointer-events-auto">
-                      <button type="button" onClick={() => headerImgInput.current?.click()}
-                        className="px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-medium transition-colors pointer-events-auto">
-                        Change
-                      </button>
-                      <button type="button" onClick={() => setForm(f => ({ ...f, header_image_url: '' }))}
-                        className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/40 text-red-300 transition-colors pointer-events-auto">
-                        <X size={14} />
-                      </button>
+                  {/* Preview — gray canvas approximates the email's white/gray surround */}
+                  <div className="rounded-xl overflow-hidden border border-white/[0.08] flex justify-center"
+                    style={{ background: '#e5e7eb', padding: '20px 12px' }}>
+                    <div className="relative group inline-block" style={{ maxWidth: '100%' }}>
+                      <img
+                        src={form.header_image_url}
+                        alt="Email header"
+                        style={{ width: form.header_image_width, maxWidth: '100%', height: 'auto', display: 'block' }}
+                      />
+                      {/* Hover overlay */}
+                      <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2 pointer-events-none group-hover:pointer-events-auto">
+                        <button type="button" onClick={() => headerImgInput.current?.click()}
+                          className="px-3 py-1.5 rounded-lg bg-white/20 hover:bg-white/30 text-white text-xs font-medium transition-colors pointer-events-auto">
+                          Change
+                        </button>
+                        <button type="button" onClick={() => setForm(f => ({ ...f, header_image_url: '' }))}
+                          className="p-1.5 rounded-lg bg-red-500/20 hover:bg-red-500/40 text-red-300 transition-colors pointer-events-auto">
+                          <X size={14} />
+                        </button>
+                      </div>
+                      {/* Resize handle */}
+                      <ResizeHandle
+                        currentWidth={form.header_image_width}
+                        maxWidth={HEADER_MAX_W}
+                        onResize={w => set('header_image_width', w)}
+                      />
                     </div>
-                    {/* Resize handle */}
-                    <ResizeHandle
-                      currentWidth={form.header_image_width}
-                      maxWidth={HEADER_MAX_W}
-                      onResize={w => set('header_image_width', w)}
-                    />
                   </div>
 
                   {/* Dimension controls */}
@@ -566,7 +699,9 @@ export function CampaignStepModal({
           {pendingBodyImg && (
             <div className="rounded-xl border border-purple-500/25 bg-purple-500/[0.04] p-4 space-y-3">
               <div className="flex items-center justify-between">
-                <p className="text-xs font-medium text-purple-300">Configure image before inserting</p>
+                <p className="text-xs font-medium text-purple-300">
+                  {pendingBodyImg.editRange ? 'Edit image' : 'Configure image before inserting'}
+                </p>
                 <button type="button" onClick={() => setPendingBodyImg(null)}
                   className="p-1 rounded-lg hover:bg-white/[0.06] transition-colors" style={{ color: 'var(--text-muted)' }}>
                   <X size={13} />
@@ -608,9 +743,34 @@ export function CampaignStepModal({
                 onLockToggle={togglePendingLock}
               />
 
+              {/* Alignment */}
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Align</span>
+                <div className="flex rounded-lg overflow-hidden border border-white/[0.08]">
+                  {([
+                    { v: 'left',   icon: TextAlignStart },
+                    { v: 'center', icon: TextAlignCenter },
+                    { v: 'right',  icon: TextAlignEnd },
+                  ] as const).map(({ v, icon: Icon }) => (
+                    <button
+                      key={v}
+                      type="button"
+                      onClick={() => setPendingAlign(v)}
+                      title={`Align ${v}`}
+                      className={`px-2 py-1.5 flex items-center justify-center transition-colors ${
+                        pendingBodyImg.align === v ? 'bg-purple-600/30 text-purple-300' : 'text-[var(--text-muted)] hover:bg-white/[0.06]'
+                      }`}
+                    >
+                      <Icon size={12} />
+                    </button>
+                  ))}
+                </div>
+                <span className="text-[10px] capitalize" style={{ color: 'var(--text-muted)' }}>{pendingBodyImg.align}</span>
+              </div>
+
               <div className="flex gap-2 pt-1">
                 <Button variant="primary" size="sm" onClick={insertPendingBodyImg}>
-                  Insert into email
+                  {pendingBodyImg.editRange ? 'Update image' : 'Insert into email'}
                 </Button>
                 <Button variant="ghost" size="sm" onClick={() => setPendingBodyImg(null)}>
                   Cancel
@@ -636,13 +796,28 @@ export function CampaignStepModal({
               }
             }}
             rows={12}
+            readOnly={!!pendingBodyImg}
             placeholder={
               form.type === 'email'
                 ? 'Hi [FirstName],\n\nI wanted to reach out about [BusinessName]…'
                 : 'Hi [FirstName], this is [RepName] from [SystemName]…'
             }
-            className="w-full rounded-xl px-3 py-2.5 text-sm resize-y bg-white/[0.04] border border-white/[0.08] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-purple-500/50 focus:bg-white/[0.07] transition-all font-mono leading-relaxed"
+            className="w-full rounded-xl px-3 py-2.5 text-sm resize-y bg-white/[0.04] border border-white/[0.08] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-purple-500/50 focus:bg-white/[0.07] transition-all font-mono leading-relaxed disabled:opacity-50"
+            style={pendingBodyImg ? { opacity: 0.5, cursor: 'not-allowed' } : undefined}
           />
+
+          {/* Live preview — a textarea can't render images, so this mirrors the actual email below it */}
+          {form.type === 'email' && (
+            <div className="space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-medium" style={{ color: 'var(--text-muted)' }}>Live Preview</span>
+                <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>How this will look in the email</span>
+              </div>
+              <div className="rounded-xl border border-white/[0.08] p-4" style={{ background: '#ffffff' }}>
+                <BodyPreview body={form.body} onEditImage={editBodyImage} />
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Token helper */}
