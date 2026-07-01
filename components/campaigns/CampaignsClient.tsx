@@ -94,6 +94,21 @@ export function CampaignsClient({
           action: 'enrolled in campaign',
           details: enrollModal.name,
         })
+
+        // Send the first campaign email/SMS
+        try {
+          const sendRes = await fetch('/api/campaigns/send', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enrollmentId: data.id }),
+          })
+          if (!sendRes.ok) {
+            const err = await sendRes.json()
+            console.error('Failed to send first campaign message:', err)
+          }
+        } catch (err) {
+          console.error('Error sending first campaign message:', err)
+        }
       }
       setEnrollModal(null)
       setEnrollLeadId('')
