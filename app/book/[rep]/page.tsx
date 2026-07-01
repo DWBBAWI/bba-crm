@@ -1,17 +1,15 @@
 'use client'
 
-import { use, useState } from 'react'
+import { use, useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Zap, Calendar, CheckCircle } from 'lucide-react'
+import { Zap, Calendar, CheckCircle, AlertCircle } from 'lucide-react'
 import { AmbientBackground } from '@/components/ui/AmbientBackground'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
+import { AVAILABLE_SLOTS } from '@/lib/booking'
 
-const AVAILABLE_SLOTS = [
-  '9:00 AM', '9:30 AM', '10:00 AM', '10:30 AM',
-  '11:00 AM', '1:00 PM', '1:30 PM', '2:00 PM',
-  '2:30 PM', '3:00 PM', '3:30 PM', '4:00 PM',
-]
+// How often to re-check availability while the user is on the time-picker step
+const AVAILABILITY_POLL_MS = 20000
 
 export default function BookingPage({ params }: { params: Promise<{ rep: string }> }) {
   const { rep } = use(params)
@@ -20,6 +18,9 @@ export default function BookingPage({ params }: { params: Promise<{ rep: string 
   const [selectedDate, setSelectedDate] = useState('')
   const [selectedTime, setSelectedTime] = useState('')
   const [loading, setLoading] = useState(false)
+  const [bookingError, setBookingError] = useState('')
+  const [bookedSlots, setBookedSlots] = useState<string[]>([])
+  const [loadingSlots, setLoadingSlots] = useState(false)
   const [form, setForm] = useState({
     name: '',
     email: '',
@@ -27,8 +28,45 @@ export default function BookingPage({ params }: { params: Promise<{ rep: string 
     business_name: '',
   })
 
+  const fetchAvailability = useCallback(async () => {
+    if (!selectedDate) return
+    setLoadingSlots(true)
+    try {
+      const res = await fetch(`/api/book/availability?repSlug=${encodeURIComponent(rep)}&date=${selectedDate}`)
+      const json = await res.json()
+      setBookedSlots(Array.isArray(json.bookedSlots) ? json.bookedSlots : [])
+    } catch {
+      // Background check only — the server still enforces availability on
+      // submit, so a hiccup here shouldn't block the whole page.
+    } finally {
+      setLoadingSlots(false)
+    }
+  }, [rep, selectedDate])
+
+  // Refetch (and clear any stale selection) whenever the date changes
+  useEffect(() => {
+    setSelectedTime('')
+    fetchAvailability()
+  }, [fetchAvailability])
+
+  // Keep availability fresh while the user is picking a time
+  useEffect(() => {
+    if (!selectedDate || step !== 'time') return
+    const interval = setInterval(fetchAvailability, AVAILABILITY_POLL_MS)
+    return () => clearInterval(interval)
+  }, [selectedDate, step, fetchAvailability])
+
+  // If the slot the user had selected just got booked by someone else, bump them back
+  useEffect(() => {
+    if (selectedTime && bookedSlots.includes(selectedTime)) {
+      setSelectedTime('')
+      setBookingError('That time was just booked by someone else — please choose another.')
+    }
+  }, [bookedSlots, selectedTime])
+
   const handleBook = async (e: React.FormEvent) => {
     e.preventDefault()
+    setBookingError('')
     setLoading(true)
     try {
       const res = await fetch('/api/book', {
@@ -45,12 +83,21 @@ export default function BookingPage({ params }: { params: Promise<{ rep: string 
         }),
       })
       const json = await res.json()
-      if (!json.success) console.error('[book]', json.error)
+      if (!json.success) {
+        // Most likely someone else took the slot between selection and submit —
+        // send the user back to pick a fresh time with up-to-date availability.
+        setBookingError(json.error || 'Booking failed. Please try again.')
+        setSelectedTime('')
+        setStep('time')
+        fetchAvailability()
+        return
+      }
+      setStep('confirm')
     } catch (err) {
       console.error('[book]', err)
+      setBookingError('Something went wrong. Please try again.')
     } finally {
       setLoading(false)
-      setStep('confirm')
     }
   }
 
@@ -107,6 +154,12 @@ export default function BookingPage({ params }: { params: Promise<{ rep: string 
             ) : step === 'time' ? (
               <div>
                 <h2 className="text-sm font-semibold text-white mb-4">Select a Date & Time</h2>
+                {bookingError && (
+                  <div className="mb-4 p-3 rounded-xl bg-red-500/10 border border-red-500/20 flex items-center gap-2 text-sm text-red-400">
+                    <AlertCircle size={14} className="flex-shrink-0" />
+                    {bookingError}
+                  </div>
+                )}
                 <Input
                   label="Date"
                   type="date"
@@ -117,24 +170,43 @@ export default function BookingPage({ params }: { params: Promise<{ rep: string 
                 />
                 {selectedDate && (
                   <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
-                    <label className="text-xs font-medium mb-2 block" style={{ color: 'var(--text-secondary)' }}>
-                      Available Times
-                    </label>
-                    <div className="grid grid-cols-3 gap-2">
-                      {AVAILABLE_SLOTS.map(slot => (
-                        <button
-                          key={slot}
-                          onClick={() => setSelectedTime(slot)}
-                          className={`py-2 rounded-xl text-sm transition-all ${
-                            selectedTime === slot
-                              ? 'bg-purple-600 text-white'
-                              : 'glass glass-hover text-[var(--text-secondary)] hover:text-white'
-                          }`}
-                        >
-                          {slot}
-                        </button>
-                      ))}
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-xs font-medium block" style={{ color: 'var(--text-secondary)' }}>
+                        Available Times
+                      </label>
+                      {loadingSlots && (
+                        <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>Checking availability…</span>
+                      )}
                     </div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {AVAILABLE_SLOTS.map(slot => {
+                        const isBooked = bookedSlots.includes(slot)
+                        return (
+                          <button
+                            key={slot}
+                            type="button"
+                            disabled={isBooked}
+                            title={isBooked ? 'Already booked' : undefined}
+                            onClick={() => !isBooked && setSelectedTime(slot)}
+                            className={`py-2 rounded-xl text-sm transition-all flex flex-col items-center gap-0.5 ${
+                              isBooked
+                                ? 'glass opacity-40 cursor-not-allowed text-[var(--text-muted)]'
+                                : selectedTime === slot
+                                  ? 'bg-purple-600 text-white'
+                                  : 'glass glass-hover text-[var(--text-secondary)] hover:text-white'
+                            }`}
+                          >
+                            {slot}
+                            {isBooked && <span className="text-[9px]">Already booked</span>}
+                          </button>
+                        )
+                      })}
+                    </div>
+                    {selectedDate && !loadingSlots && bookedSlots.length === AVAILABLE_SLOTS.length && (
+                      <p className="text-xs mt-2" style={{ color: 'var(--text-muted)' }}>
+                        No times left on this date — try another day.
+                      </p>
+                    )}
                     {selectedTime && (
                       <Button
                         variant="primary"
