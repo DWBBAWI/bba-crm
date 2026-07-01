@@ -13,13 +13,24 @@ export function slugify(name: string): string {
 }
 
 // slot format: "9:00 AM", "2:30 PM"
+// Returns a Date representing the slot time in Central Time (CT, UTC-5).
+// We parse as CT, then convert to UTC ISO string so comparisons work correctly
+// against database times which are stored in UTC.
 export function parseSlotTime(date: string, slot: string): Date {
   const [time, ampm] = slot.split(' ')
   const [h, m] = time.split(':').map(Number)
   let hour = h
   if (ampm === 'PM' && hour !== 12) hour += 12
   if (ampm === 'AM' && hour === 12) hour = 0
-  return new Date(`${date}T${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`)
+
+  // Create an ISO string as if the time is in CT (UTC-5)
+  // Then convert to UTC by adding 5 hours
+  const ctTime = `${date}T${String(hour).padStart(2, '0')}:${String(m).padStart(2, '0')}:00`
+  const ctDate = new Date(ctTime)
+  // Adjust: when we parse "2026-07-02T11:00:00" without timezone,
+  // JavaScript treats it as UTC. We need to treat it as CT.
+  // So we add 5 hours (18000 ms * 1000) to get the UTC equivalent.
+  return new Date(ctDate.getTime() + 5 * 60 * 60 * 1000)
 }
 
 export function slotRange(date: string, slot: string): { start: Date; end: Date } {
