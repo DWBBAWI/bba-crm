@@ -51,8 +51,8 @@ export default async function CampaignsPage() {
     id: l.id,
     email: l.email,
     assigned_rep_id: l.assigned_rep_id,
-    owner_name: l.owner?.name || '',
-    business_name: l.business?.business_name || '',
+    owner_name: Array.isArray(l.owner) ? l.owner[0]?.name || '' : l.owner?.name || '',
+    business_name: Array.isArray(l.business) ? l.business[0]?.business_name || '' : l.business?.business_name || '',
   }))
 
   return (
