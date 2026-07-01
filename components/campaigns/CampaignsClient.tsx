@@ -125,6 +125,11 @@ export function CampaignsClient({
     setEnrollments(prev => prev.map(e => e.id === enrollmentId ? { ...e, status: newStatus } : e))
   }
 
+  const handleUnenroll = async (enrollmentId: string) => {
+    await supabase.from('campaign_enrollments').delete().eq('id', enrollmentId)
+    setEnrollments(prev => prev.filter(e => e.id !== enrollmentId))
+  }
+
   const handleStepSaved = (campaignId: string, savedStep: any) => {
     setCampaignsList(prev => prev.map(c => {
       if (c.id !== campaignId) return c
@@ -364,6 +369,15 @@ export function CampaignsClient({
                   onClick={() => handlePause(enrollment.id, enrollment.status)}
                 >
                   {enrollment.status === 'active' ? 'Pause' : 'Resume'}
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  icon={<Users size={13} />}
+                  onClick={() => handleUnenroll(enrollment.id)}
+                  className="text-red-400 hover:text-red-300"
+                >
+                  Unenroll
                 </Button>
               </motion.div>
             ))
