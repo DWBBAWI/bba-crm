@@ -950,7 +950,7 @@ function ActivitySection({ leadId }: { leadId: string }) {
             <div className="flex-1 min-w-0">
               <div className="text-white font-medium">{activity.action}</div>
               {activity.details && (
-                <div className="text-xs" style={{ color: 'var(--text-secondary)' }} className="mt-0.5">
+                <div className="text-xs mt-0.5" style={{ color: 'var(--text-secondary)' }}>
                   {activity.details}
                 </div>
               )}
