@@ -66,7 +66,7 @@ function buildHtmlEmail({
           <tr>
             <td style="padding:20px 40px 24px 40px;background:#f9fafb;border-top:1px solid #e5e7eb;">
               <p style="margin:0;font-size:12px;color:#9ca3af;line-height:1.5;font-family:Arial,sans-serif;">
-                You're receiving this because you expressed interest in payment processing services from ${escapeForHtml(repName)}.<br>
+                ${escapeForHtml(currentStep.footer_text || 'You\'re receiving this email from Breakthrough Business Advisors')}.<br>
                 <a href="${unsubLink}" style="color:#6366f1;text-decoration:underline;">Unsubscribe</a>
               </p>
             </td>

@@ -261,6 +261,7 @@ export function CampaignStepModal({
     body:               step?.body ?? '',
     header_image_url:   step?.header_image_url ?? '',
     header_image_width: step?.header_image_width ?? HEADER_MAX_W,
+    footer_text:        step?.footer_text ?? 'You\'re receiving this email from Breakthrough Business Advisors',
   })
 
   // Natural pixel dimensions of the uploaded header image
@@ -837,6 +838,25 @@ export function CampaignStepModal({
               <div ref={previewPanelRef} className="rounded-xl border border-white/[0.08] p-4" style={{ background: '#ffffff' }}>
                 <BodyPreview body={form.body} onEditImage={editBodyImage} highlightStart={highlightImgStart} />
               </div>
+            </div>
+          )}
+
+          {/* Email footer text */}
+          {form.type === 'email' && (
+            <div className="flex flex-col gap-1.5">
+              <label className="text-xs font-medium" style={{ color: 'var(--text-secondary)' }}>
+                Email Footer
+              </label>
+              <textarea
+                value={form.footer_text}
+                onChange={e => set('footer_text', e.target.value)}
+                rows={2}
+                placeholder="You're receiving this email from Breakthrough Business Advisors"
+                className="w-full rounded-xl px-3 py-2.5 text-sm resize-y bg-white/[0.04] border border-white/[0.08] text-[var(--text-primary)] placeholder:text-[var(--text-muted)] focus:outline-none focus:border-purple-500/50 focus:bg-white/[0.07] transition-all leading-relaxed"
+              />
+              <span className="text-[10px]" style={{ color: 'var(--text-muted)' }}>
+                Appears above the unsubscribe link at the bottom of the email
+              </span>
             </div>
           )}
         </div>
