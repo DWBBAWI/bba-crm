@@ -117,6 +117,7 @@ interface Step {
   body: string
   header_image_url?: string | null
   header_image_width?: number | null
+  footer_text?: string | null
 }
 
 type ImgAlign = 'left' | 'center' | 'right'
