@@ -303,6 +303,7 @@ export function CampaignStepModal({
       body:               step?.body ?? '',
       header_image_url:   step?.header_image_url ?? '',
       header_image_width: step?.header_image_width ?? HEADER_MAX_W,
+      footer_text:        step?.footer_text ?? 'You\'re receiving this email from Breakthrough Business Advisors',
     }
     setForm(nextForm)
     setConfirmDelete(false)
