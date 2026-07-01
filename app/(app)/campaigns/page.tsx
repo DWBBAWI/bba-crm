@@ -47,7 +47,7 @@ export default async function CampaignsPage() {
   const { data: leadsRaw } = await leadsQuery
 
   // Flatten the joins for easier access in the component
-  const leads = (leadsRaw || []).map(l => ({
+  const leads = (leadsRaw || []).map((l: any) => ({
     id: l.id,
     email: l.email,
     assigned_rep_id: l.assigned_rep_id,
