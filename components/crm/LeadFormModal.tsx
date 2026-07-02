@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/Button'
 import { Input, Select, Textarea } from '@/components/ui/Input'
 import { SearchableSelect } from '@/components/ui/SearchableSelect'
 import { createClient } from '@/lib/supabase'
-import { PIPELINE_STAGES, POS_SYSTEMS, LEAD_SOURCES } from '@/lib/utils'
+import { PIPELINE_STAGES, POS_SYSTEMS, LEAD_SOURCES, formatPhoneNumber } from '@/lib/utils'
 import { geocodeAddress } from '@/lib/geocode'
 import type { Lead, Person, Business } from '@/types'
 import { ChevronRight, ChevronLeft } from 'lucide-react'
@@ -177,8 +177,8 @@ export function LeadFormModal({ open, onClose, onCreate, reps, currentUserId, in
         city: form.city,
         state: form.state,
         zip: form.zip,
-        owner_phone: form.owner_phone,
-        business_phone: form.business_phone,
+        owner_phone: formatPhoneNumber(form.owner_phone),
+        business_phone: formatPhoneNumber(form.business_phone),
         email: form.email,
         industry: form.industry,
         monthly_processing_volume: form.monthly_processing_volume ? parseFloat(form.monthly_processing_volume) : null,

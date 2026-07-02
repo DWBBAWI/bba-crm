@@ -36,6 +36,20 @@ export function isDueSoon(date: string | null | undefined, days = 7): boolean {
   return isAfter(d, new Date()) && isBefore(d, addDays(new Date(), days))
 }
 
+export function formatPhoneNumber(phone: string | null | undefined): string {
+  if (!phone) return ''
+  // Remove all non-digits
+  const digits = phone.replace(/\D/g, '')
+  // If it's 10 digits (US), prepend +1
+  if (digits.length === 10) return `+1${digits}`
+  // If it's 11 digits and starts with 1, prepend +
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`
+  // If it already starts with +, return as-is
+  if (phone.startsWith('+')) return phone
+  // Otherwise prepend +1
+  return `+1${digits}`
+}
+
 export const PIPELINE_STAGES: PipelineStage[] = [
   'New Lead',
   'Contacted',
